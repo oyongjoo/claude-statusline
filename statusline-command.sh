@@ -37,12 +37,12 @@ def fmt_reset(ts):
 model = get('model.display_name', 'Claude')
 cost = float(get('cost.total_cost_usd', '0'))
 
-five_hr_pct = get('rate_limits.five_hour.used_percentage', '0')
+five_hr_pct = int(round(float(get('rate_limits.five_hour.used_percentage', '0'))))
 five_hr_remaining = fmt_remaining(get('rate_limits.five_hour.resets_at', '0'))
-seven_day_pct = get('rate_limits.seven_day.used_percentage', '0')
+seven_day_pct = int(round(float(get('rate_limits.seven_day.used_percentage', '0'))))
 seven_day_reset = fmt_reset(get('rate_limits.seven_day.resets_at', '0'))
 
-ctx = get('context_window.used_percentage', '0')
+ctx = int(round(float(get('context_window.used_percentage', '0'))))
 
 dur_ms = int(get('cost.total_duration_ms', '0'))
 mins = dur_ms // 60000
