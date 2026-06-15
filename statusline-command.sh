@@ -39,11 +39,13 @@ def human(n):
     if n >= 1000: return f'{n/1000:.0f}k' if n >= 10000 else f'{n/1000:.1f}k'
     return str(n)
 
-def short_model(dn):  # 'Opus 4.8 (1M context)' -> 'Opus4.8(1M)'
+def short_model(dn, ctx_size=0):  # 'Opus 4.8 (1M context)' -> 'Opus4.8(1M)', 'Sonnet 4.6' -> 'Sonnet4.6(200k)'
     m = re.match(r'([A-Za-z]+)\s+([\d.]+)', dn)
     if not m: return dn
     s = m.group(1) + m.group(2)
-    if '1M' in dn or '1m' in dn: s += '(1M)'
+    n = int(ctx_size) if ctx_size else 0
+    if n >= 900000:   s += '(1M)'
+    elif n >= 1000:   s += f'({n//1000}k)'
     return s
 
 def model_color(dn):  # 계열별 색상 구분
@@ -55,7 +57,8 @@ def model_color(dn):  # 계열별 색상 구분
 
 # ── 데이터 ──
 raw_model = get('model.display_name', 'Claude')
-model = short_model(raw_model)
+ctx_size = get('context_window.context_window_size', '0')
+model = short_model(raw_model, ctx_size)
 effort = get('effort.level', '')
 
 five_pct = int(round(float(get('rate_limits.five_hour.used_percentage', '0'))))
