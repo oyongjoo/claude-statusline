@@ -42,4 +42,4 @@ print('settings.json 업데이트 완료')
 
 print()
 print('설치 완료! Claude Code를 재시작하세요.')
-print('표시 예시: myproject ⎇ main* | [Opus 4.8] 🧠 | $1.22 | +42/-7 | 세션:2%(3시간41분) | 주간:9%(03/27 13:00) | ctx:4%(78k) | 15m3s')
+print('표시 예시: o4.8(1M) high | S:38%(0:38) | W:9%(06/16 01:00) | ctx:10%(100k) | myproject ⎇ main*')

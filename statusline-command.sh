@@ -3,7 +3,7 @@ input=$(cat)
 
 parse() {
   python3 -c "
-import json, sys, datetime, os, subprocess
+import json, sys, datetime, os, subprocess, re
 
 data = json.loads(sys.stdin.read())
 
@@ -17,15 +17,15 @@ def get(path, default='0'):
         v = v.get(k, {}) if isinstance(v, dict) else {}
     return v if v != {} else default
 
-def fmt_remaining(ts):
+def fmt_remaining(ts):  # 리셋까지 남은 시간 → H:MM
     if not ts or ts == '0': return ''
     diff = datetime.datetime.fromtimestamp(int(ts)) - datetime.datetime.now()
-    if diff.total_seconds() <= 0: return '0시간00분'
+    if diff.total_seconds() <= 0: return '0:00'
     h = int(diff.total_seconds() // 3600)
     m = int((diff.total_seconds() % 3600) // 60)
-    return f'{h}시간{m:02d}분'
+    return f'{h}:{m:02d}'
 
-def fmt_reset(ts):
+def fmt_reset(ts):  # 리셋 시각
     if not ts or ts == '0': return ''
     dt = datetime.datetime.fromtimestamp(int(ts))
     now = datetime.datetime.now()
@@ -39,14 +39,16 @@ def human(n):
     if n >= 1000: return f'{n/1000:.0f}k' if n >= 10000 else f'{n/1000:.1f}k'
     return str(n)
 
-# ── 데이터 추출 ──
-model = get('model.display_name', 'Claude')
-cwd = get('cwd', '') or get('workspace.current_dir', '')
-proj = os.path.basename(cwd) if cwd else ''
+def short_model(dn):  # 'Opus 4.8 (1M context)' -> 'o4.8(1M)'
+    m = re.match(r'([A-Za-z]+)\s+([\d.]+)', dn)
+    if not m: return dn
+    s = m.group(1)[0].lower() + m.group(2)
+    if '1M' in dn or '1m' in dn: s += '(1M)'
+    return s
 
-cost = float(get('cost.total_cost_usd', '0'))
-added = int(get('cost.total_lines_added', '0'))
-removed = int(get('cost.total_lines_removed', '0'))
+# ── 데이터 ──
+model = short_model(get('model.display_name', 'Claude'))
+effort = get('effort.level', '')
 
 five_pct = int(round(float(get('rate_limits.five_hour.used_percentage', '0'))))
 five_rem = fmt_remaining(get('rate_limits.five_hour.resets_at', '0'))
@@ -56,14 +58,10 @@ seven_reset = fmt_reset(get('rate_limits.seven_day.resets_at', '0'))
 ctx_pct = int(round(float(get('context_window.used_percentage', '0'))))
 ctx_tok = get('context_window.total_input_tokens', '0')
 
-dur_ms = int(get('cost.total_duration_ms', '0'))
-mins, secs = dur_ms // 60000, (dur_ms % 60000) // 1000
+cwd = get('cwd', '') or get('workspace.current_dir', '')
+proj = os.path.basename(cwd) if cwd else ''
 
-effort = get('effort.level', '')
-thinking = bool(data.get('thinking', {}).get('enabled', False))
-fast = bool(data.get('fast_mode', False))
-
-# ── git 브랜치 ──
+# ── git 브랜치 (맨 뒤) ──
 branch = ''
 if cwd and os.path.isdir(cwd):
     try:
@@ -71,40 +69,32 @@ if cwd and os.path.isdir(cwd):
                            capture_output=True, text=True, timeout=0.5)
         if b.returncode == 0:
             branch = b.stdout.strip()
-            dirty = subprocess.run(['git','-C',cwd,'status','--porcelain'],
-                                   capture_output=True, text=True, timeout=0.5)
-            if dirty.stdout.strip(): branch += '*'
+            d = subprocess.run(['git','-C',cwd,'status','--porcelain'],
+                               capture_output=True, text=True, timeout=0.5)
+            if d.stdout.strip(): branch += '*'
     except Exception:
         pass
 
-# ── 세그먼트 조립 ──
+# ── 세그먼트 (중요 순서: 모델 → 사용량 → git) ──
 seg = []
-loc = c(CYAN, proj) if proj else ''
-if branch: loc += c(DIM, ' ⎇ ') + c(MAGENTA, branch)
-if loc: seg.append(loc)
 
-mode = c(BOLD, f'[{model}]')
-flags = []
-if fast: flags.append(c(YELLOW, '⚡fast'))
-if thinking: flags.append(c(MAGENTA, '🧠'))
-if effort and effort not in ('medium','none'): flags.append(c(DIM, effort))
-if flags: mode += ' ' + ''.join(flags)
-seg.append(mode)
+mtxt = c(BOLD, model)
+if effort and effort != 'none':
+    mtxt += ' ' + c(DIM, effort)
+seg.append(mtxt)
 
-seg.append(c(GREEN, f'\${cost:.2f}'))
-
-if added or removed:
-    seg.append(c(GREEN, f'+{added}') + c(DIM,'/') + c(RED, f'-{removed}'))
-
-s = f'세션:{five_pct}%({five_rem})' if five_rem else f'세션:{five_pct}%'
+s = f'S:{five_pct}%({five_rem})' if five_rem else f'S:{five_pct}%'
 seg.append(c(pct_color(five_pct), s))
 
-w = f'주간:{seven_pct}%({seven_reset})' if seven_reset else f'주간:{seven_pct}%'
+w = f'W:{seven_pct}%({seven_reset})' if seven_reset else f'W:{seven_pct}%'
 seg.append(c(pct_color(seven_pct), w))
 
 seg.append(c(pct_color(ctx_pct), f'ctx:{ctx_pct}%({human(ctx_tok)})'))
 
-seg.append(c(DIM, f'{mins}m{secs}s'))
+if proj:
+    g = c(CYAN, proj)
+    if branch: g += c(DIM, ' ⎇ ') + c(MAGENTA, branch)
+    seg.append(g)
 
 print(c(DIM,' | ').join(seg))
 " <<< "$input"
