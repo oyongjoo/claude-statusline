@@ -66,10 +66,22 @@ def short_model(dn):  # 'Opus 4.8 (1M context)' -> 'Opus4.8(1M)'
     return s
 
 
+def model_color(dn):  # 계열별 색상 구분
+    d = dn.lower()
+    if 'opus' in d:
+        return '95'    # 밝은 마젠타
+    if 'sonnet' in d:
+        return '94'    # 밝은 파랑
+    if 'haiku' in d:
+        return '92'    # 밝은 초록
+    return '1'
+
+
 data = json.loads(sys.stdin.read())
 
 # ── 데이터 ──
-model = short_model(get_val(data, 'model.display_name', 'Claude'))
+raw_model = get_val(data, 'model.display_name', 'Claude')
+model = short_model(raw_model)
 effort = get_val(data, 'effort.level', '')
 
 five_pct = int(round(float(get_val(data, 'rate_limits.five_hour.used_percentage', '0'))))
@@ -101,7 +113,7 @@ if cwd and os.path.isdir(cwd):
 # ── 세그먼트 (중요 순서: 모델 → 사용량 → git) ──
 seg = []
 
-mtxt = c(BOLD, model)
+mtxt = c('1;' + model_color(raw_model), model)
 if effort and effort != 'none':
     mtxt += ' ' + c(DIM, effort)
 seg.append(mtxt)
