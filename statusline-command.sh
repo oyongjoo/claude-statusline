@@ -3,7 +3,7 @@ input=$(cat)
 
 parse() {
   python3 -c "
-import json, sys, datetime, os, subprocess, re
+import json, sys, datetime, os, subprocess, re, time, tempfile, hashlib
 
 data = json.loads(sys.stdin.read())
 
@@ -72,19 +72,51 @@ ctx_tok = get('context_window.total_input_tokens', '0')
 cwd = get('cwd', '') or get('workspace.current_dir', '')
 proj = os.path.basename(cwd) if cwd else ''
 
-# ── git 브랜치 (맨 뒤) ──
+# ── git 브랜치 (맨 뒤, session_id+cwd 키로 5초 캐시) ──
 branch = ''
 if cwd and os.path.isdir(cwd):
-    try:
-        b = subprocess.run(['git','-C',cwd,'rev-parse','--abbrev-ref','HEAD'],
-                           capture_output=True, text=True, timeout=0.5)
-        if b.returncode == 0:
-            branch = b.stdout.strip()
-            d = subprocess.run(['git','-C',cwd,'status','--porcelain'],
+    session_id = re.sub(r'[^A-Za-z0-9_-]', '', get('session_id', ''))
+    cache_dir = tempfile.gettempdir()
+    cache_file = ''
+    if session_id:
+        cwd_hash = hashlib.sha1(cwd.encode()).hexdigest()[:8]
+        cache_file = os.path.join(cache_dir, f'claude-statusline-git-{session_id}-{cwd_hash}')
+        try:  # 하루 넘은 캐시 파일 정리
+            for fn in os.listdir(cache_dir):
+                if fn.startswith('claude-statusline-git-'):
+                    fp = os.path.join(cache_dir, fn)
+                    if time.time() - os.path.getmtime(fp) > 86400:
+                        os.remove(fp)
+        except Exception:
+            pass
+    cached = None
+    if cache_file and os.path.exists(cache_file) and time.time() - os.path.getmtime(cache_file) <= 5:
+        try:
+            with open(cache_file) as f:
+                cached = f.read()
+        except Exception:
+            cached = None
+    if cached is None:
+        cached = ''
+        try:
+            b = subprocess.run(['git','-C',cwd,'rev-parse','--abbrev-ref','HEAD'],
                                capture_output=True, text=True, timeout=0.5)
-            if d.stdout.strip(): branch += '*'
-    except Exception:
-        pass
+            if b.returncode == 0:
+                cached = b.stdout.strip()
+                d = subprocess.run(['git','-C',cwd,'status','--porcelain'],
+                                   capture_output=True, text=True, timeout=0.5)
+                if d.stdout.strip(): cached += '*'
+        except Exception:
+            cached = ''
+        if cache_file:
+            try:
+                fd, tmp_path = tempfile.mkstemp(dir=cache_dir, prefix='.claude-statusline-git-')
+                with os.fdopen(fd, 'w') as f:
+                    f.write(cached)
+                os.replace(tmp_path, cache_file)
+            except Exception:
+                pass
+    branch = cached
 
 # ── 세그먼트 (중요 순서: 모델 → 사용량 → git) ──
 seg = []
@@ -92,6 +124,8 @@ seg = []
 mtxt = c('1;' + model_color(raw_model), model)
 if effort and effort != 'none':
     mtxt += ' ' + c(DIM, effort)
+if get('thinking.enabled', False):
+    mtxt += ' ' + c(DIM, 'think')
 seg.append(mtxt)
 
 s = f'S:{five_pct}%({five_rem})' if five_rem else f'S:{five_pct}%'
